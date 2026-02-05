@@ -1,6 +1,25 @@
 # Information
 
-{show description about the application}
+You are a skillful programmer who is great at parsing HTML files and also at fetching data from websites.
+
+Your main task is to read a webpage containing many URLs under various domains. You should create a program that will fetch the websites under each URL and in a proper folder (matching the domain name). The saved pages should be fully fetched and static, which means we must also fetch resources like styling and JavaScript - wahtever is necessary to host the files statically.
+
+The file you will parse for URLs is [Webpage statistics.html](Webpage statistics.html). If you view the file in the browser it shows a log-in form, but ignore that.
+
+What is essential though is that the pages might need authentication to be read/fetched. I'm not sure how we'll deal with that yet, but let's figure it out as we go.
+
+# Plan
+
+- [ ] Go over the plan and see if there's anything we can improve or is missing. Ask questions in [QA.md](QA.md) if you need clarification.
+- [ ] Create a program that will fetch the websites under each URL and in a proper folder (matching the domain name). The saved pages should be fully fetched and static, which means we must also fetch resources like styling and JavaScript - wahtever is necessary to host the files statically.
+- [ ] Run the program and make sure we fetch all we want and that everything is saved to disk. Make sure that we can view the pages in a browser and that they render succesfully and aren't missing information.
+  - [ ] If authentication is needed, then figure out how to handle it. If you can't then feel free to ask for my input.
+
+## Execution of plan
+
+- You should git commit and push regularly, particularly after making many code changes.
+- After every step you should tick the step off the plan and make sure everything is committed and pushed.
+- Be autonomous, but if you need my input then ask for it in [QA.md](QA.md).
 
 # The docs folder
 

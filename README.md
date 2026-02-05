@@ -1,6 +1,6 @@
-# {Project name}
+# Save Domeneshop statistics to disk
 
-{Short description for humans}
+A repo with the purpose of AI agents to save Domeneshop statistics to disk.
 
 # For AI agents
 

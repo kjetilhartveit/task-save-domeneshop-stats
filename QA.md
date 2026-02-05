@@ -13,3 +13,21 @@ How would you like to handle authentication? Options:
 ### Answer
 
 I added the cookies to the `cookies.json` file.
+
+Please note I changed the format in `cookies.json` and included more info like domain and path. It now looks like this:
+
+```
+{
+  "statsAuth": {
+    "value": "{cookie value}",
+    "domain": "stat.domeneshop.no",
+    "path": "/",
+    "HttpOnly": true,
+    "Secure": true
+  }
+}
+```
+
+The variable `{cookie value}` here contains the actual cookie value. `statsAuth` is the name of the cookie. Make sure your script is adjusted accordingly.
+
+Note that they are cookies and not basic auth credentials.

@@ -32,6 +32,17 @@ async function loadCookies() {
       if (cookies.cookies) {
         return cookies.cookies;
       }
+      // If it's an object with named cookie entries (e.g., {statsAuth: {value: "...", ...}})
+      // Each key is the cookie name, and the value object contains 'value' property
+      const cookieParts = [];
+      for (const [name, data] of Object.entries(cookies)) {
+        if (data && typeof data === 'object' && data.value) {
+          cookieParts.push(`${name}=${data.value}`);
+        }
+      }
+      if (cookieParts.length > 0) {
+        return cookieParts.join('; ');
+      }
     }
   } catch (err) {
     console.error('Error loading cookies:', err.message);

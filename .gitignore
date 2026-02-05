@@ -1,3 +1,12 @@
 
 # Claude
 /.claude/settings.local.json
+
+# Node
+node_modules/
+
+# Output folder (downloaded statistics)
+output/
+
+# Cookies (sensitive)
+cookies.json

@@ -12,4 +12,4 @@ How would you like to handle authentication? Options:
 
 ### Answer
 
-(waiting for user answer)
+I added the cookies to the `cookies.json` file.

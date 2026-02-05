@@ -14,6 +14,7 @@ What is essential though is that the pages might need authentication to be read/
 - [x] Create a program that will fetch the websites under each URL and in a proper folder (matching the domain name). The saved pages should be fully fetched and static, which means we must also fetch resources like styling and JavaScript - wahtever is necessary to host the files statically.
 - [ ] Run the program and make sure we fetch all we want and that everything is saved to disk. Make sure that we can view the pages in a browser and that they render succesfully and aren't missing information.
   - [ ] If authentication is needed, then figure out how to handle it. If you can't then feel free to ask for my input.
+  - [ ] Feel free look at a page or two to see how the data is structured and re-check that your script works as expected, before running the program on all pages.
 
 ## Execution of plan
 

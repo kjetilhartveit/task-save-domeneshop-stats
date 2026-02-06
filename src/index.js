@@ -335,14 +335,143 @@ async function fetchSubpages(url, domain, dateCode, cookies) {
 }
 
 /**
+ * Map URL path domain segment to output folder name.
+ * The "all" domain in URLs corresponds to the "All domains" output folder.
+ */
+function urlPathToFolderName(urlPath) {
+  if (urlPath === 'all') return 'All domains';
+  return urlPath;
+}
+
+/**
+ * Fetch the overview page and save it as a static index.html in the output root.
+ * Uses the pre-rendered HTML from "Webpage statistics.html" as the base (since
+ * the live page is a React SPA that requires JS to render), downloads the CSS
+ * and logo from the server, rewrites links to point to local files, and removes
+ * unnecessary elements like the logout button and JS bundle.
+ */
+async function fetchOverview(cookies) {
+  console.log('Fetching overview page resources...\n');
+
+  // Fetch the live page to discover actual resource URLs
+  const overviewUrl = 'https://stat.domeneshop.no/';
+  const response = await fetchWithAuth(overviewUrl, cookies);
+  const liveHtml = await response.text();
+
+  // Read the pre-rendered saved HTML (has full DOM content)
+  const savedHtmlPath = path.join(projectRoot, 'Webpage statistics.html');
+  const savedHtml = await fs.readFile(savedHtmlPath, 'utf-8');
+  const $ = cheerio.load(savedHtml);
+
+  // Extract actual resource URLs from the live page
+  const $live = cheerio.load(liveHtml);
+  const cssHref = $live('link[rel="stylesheet"]').attr('href');
+
+  // Remove the JS script tag (content is already rendered, JS would interfere)
+  $('script').remove();
+
+  // Remove the logout button (not useful for static page)
+  $('.logoutButton').remove();
+
+  // Remove noscript message (not relevant for static page)
+  $('noscript').remove();
+
+  // Rewrite stat links to local relative paths
+  $('a[href*="stat.domeneshop.no/data/"]').each((_, el) => {
+    const href = $(el).attr('href');
+    const match = href.match(/stat\.domeneshop\.no\/data\/([^/]+)\/(\d{6})\/(.+\.html)/);
+    if (match) {
+      const [, urlDomain, dateCode, filename] = match;
+      const folderName = urlPathToFolderName(urlDomain);
+      const localPath = `./${folderName}/${dateCode}/${filename}`;
+      $(el).attr('href', localPath);
+      $(el).removeAttr('target');
+      $(el).removeAttr('rel');
+    }
+  });
+
+  // Download resources (CSS, logo) from the server
+  const resourceDir = path.join(OUTPUT_DIR, 'resources');
+  await fs.ensureDir(resourceDir);
+
+  // Download CSS
+  if (cssHref) {
+    try {
+      const cssUrl = new URL(cssHref, overviewUrl).href;
+      const cssFilename = urlToFilename(cssUrl);
+      const cssLocalPath = `resources/${cssFilename}`;
+      const cssFullPath = path.join(OUTPUT_DIR, cssLocalPath);
+
+      if (!(await fs.pathExists(cssFullPath))) {
+        const cssResponse = await fetchWithAuth(cssUrl, cookies);
+        const cssBuffer = Buffer.from(await cssResponse.arrayBuffer());
+        await fs.writeFile(cssFullPath, cssBuffer);
+        console.log(`  + css: ${cssFilename}`);
+      }
+
+      $('link[rel="stylesheet"]').attr('href', cssLocalPath);
+    } catch (err) {
+      console.log(`  ! Failed to fetch CSS: ${err.message}`);
+    }
+  }
+
+  // Download logo - extract the actual URL from the JS bundle
+  // In CRA builds, the logo is imported in JS and gets a hashed path like /static/media/logo-no.{hash}.svg
+  const jsSrc = $live('script[src]').attr('src');
+  let logoLocalPath = null;
+  if (jsSrc) {
+    try {
+      const jsUrl = new URL(jsSrc, overviewUrl).href;
+      const jsResponse = await fetchWithAuth(jsUrl, cookies);
+      const jsContent = await jsResponse.text();
+
+      // Look for logo references in the JS bundle (e.g., "/images/logo-no.svg")
+      const logoMatch = jsContent.match(/"(\/[^"]*logo[^"]*\.svg)"/i);
+      if (logoMatch) {
+        const logoPath = logoMatch[1];
+        const logoUrl = new URL(logoPath, overviewUrl).href;
+        const logoFilename = urlToFilename(logoUrl);
+        logoLocalPath = `resources/${logoFilename}`;
+        const logoFullPath = path.join(OUTPUT_DIR, logoLocalPath);
+
+        if (!(await fs.pathExists(logoFullPath))) {
+          const logoResponse = await fetchWithAuth(logoUrl, cookies);
+          const logoBuffer = Buffer.from(await logoResponse.arrayBuffer());
+          await fs.writeFile(logoFullPath, logoBuffer);
+          console.log(`  + image: ${logoFilename}`);
+        }
+      } else {
+        console.log('  ! Could not find logo URL in JS bundle');
+      }
+    } catch (err) {
+      console.log(`  ! Failed to extract/fetch logo: ${err.message}`);
+    }
+  }
+
+  if (logoLocalPath) {
+    $('img.headerLogo').attr('src', logoLocalPath);
+  }
+
+  const finalHtml = $.html();
+  const indexPath = path.join(OUTPUT_DIR, 'index.html');
+  await fs.writeFile(indexPath, finalHtml);
+
+  console.log(`\nOverview page saved to: ${indexPath}`);
+}
+
+/**
  * Main function to fetch all statistics pages
  */
 async function main() {
   const subpagesOnly = process.argv.includes('--subpages-only');
+  const overviewOnly = process.argv.includes('--overview');
 
   console.log('Domeneshop Statistics Fetcher\n');
   if (subpagesOnly) {
     console.log('Mode: subpages only (main pages already fetched)\n');
+  }
+  if (overviewOnly) {
+    console.log('Mode: overview page only\n');
   }
 
   // Load cookies
@@ -360,6 +489,12 @@ async function main() {
   }
 
   console.log('Cookies loaded successfully.\n');
+
+  // Handle overview-only mode
+  if (overviewOnly) {
+    await fetchOverview(cookies);
+    return;
+  }
 
   // Parse URLs from HTML
   const domains = await parseStatisticsHtml();

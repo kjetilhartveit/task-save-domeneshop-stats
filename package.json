@@ -6,6 +6,7 @@
   "main": "src/index.js",
   "scripts": {
     "fetch": "node src/index.js",
+    "fetch-subpages": "node src/index.js --subpages-only",
     "parse": "node src/parse-urls.js"
   },
   "dependencies": {

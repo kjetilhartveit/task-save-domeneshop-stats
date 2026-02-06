@@ -185,24 +185,38 @@ function rewriteHtmlUrls(html, resourceMap, baseUrl) {
 }
 
 /**
- * Fetch and save a single statistics page with all its resources
+ * Extract subpage links from a main AWStats HTML page.
+ * Returns relative filenames like "awstats.domain.urldetail.html".
  */
-async function fetchPage(url, domain, dateCode, cookies) {
-  const domainDir = path.join(OUTPUT_DIR, domain);
-  const pageDir = path.join(domainDir, dateCode);
-  const resourceDir = path.join(pageDir, 'resources');
+function extractSubpageLinks(html) {
+  const $ = cheerio.load(html);
+  const subpages = new Set();
 
-  await fs.ensureDir(pageDir);
+  $('a[href]').each((_, el) => {
+    const href = $(el).attr('href');
+    if (!href) return;
+    // Skip anchor links
+    if (href.startsWith('#')) return;
+    // Skip external links (e.g. awstats.org)
+    if (href.startsWith('http://') || href.startsWith('https://')) return;
+    // Only include awstats .html subpage files
+    if (href.startsWith('awstats.') && href.endsWith('.html')) {
+      subpages.add(href);
+    }
+  });
+
+  return Array.from(subpages);
+}
+
+/**
+ * Download resources for an HTML page and save the rewritten HTML.
+ * Reuses existing resources in the resources/ folder if already downloaded.
+ */
+async function downloadResourcesAndSave(html, pageUrl, pageDir, htmlFilename, cookies) {
+  const resourceDir = path.join(pageDir, 'resources');
   await fs.ensureDir(resourceDir);
 
-  console.log(`  Fetching: ${url}`);
-
-  // Fetch the main HTML page
-  const response = await fetchWithAuth(url, cookies);
-  let html = await response.text();
-
-  // Extract and download resources
-  const resources = extractResources(html, url);
+  const resources = extractResources(html, pageUrl);
   const resourceMap = {};
 
   for (const resource of resources) {
@@ -211,12 +225,17 @@ async function fetchPage(url, domain, dateCode, cookies) {
       const localPath = `resources/${filename}`;
       const fullPath = path.join(pageDir, localPath);
 
-      // Download the resource
+      // Skip if resource already exists on disk
+      if (await fs.pathExists(fullPath)) {
+        resourceMap[resource.original] = localPath;
+        resourceMap[resource.url] = localPath;
+        continue;
+      }
+
       const resResponse = await fetchWithAuth(resource.url, cookies);
       const buffer = Buffer.from(await resResponse.arrayBuffer());
       await fs.writeFile(fullPath, buffer);
 
-      // Map original URL to local path
       resourceMap[resource.original] = localPath;
       resourceMap[resource.url] = localPath;
 
@@ -226,21 +245,105 @@ async function fetchPage(url, domain, dateCode, cookies) {
     }
   }
 
-  // Rewrite HTML to use local resources
-  html = rewriteHtmlUrls(html, resourceMap, url);
-
-  // Save the HTML file
-  const htmlFilename = path.basename(new URL(url).pathname) || 'index.html';
+  html = rewriteHtmlUrls(html, resourceMap, pageUrl);
   await fs.writeFile(path.join(pageDir, htmlFilename), html);
 
-  return { success: true, resources: resources.length };
+  return resources.length;
+}
+
+/**
+ * Fetch and save a single statistics page with all its resources
+ */
+async function fetchPage(url, domain, dateCode, cookies) {
+  const domainDir = path.join(OUTPUT_DIR, domain);
+  const pageDir = path.join(domainDir, dateCode);
+
+  await fs.ensureDir(pageDir);
+
+  console.log(`  Fetching: ${url}`);
+
+  // Fetch the main HTML page
+  const response = await fetchWithAuth(url, cookies);
+  let html = await response.text();
+
+  const htmlFilename = path.basename(new URL(url).pathname) || 'index.html';
+  const resourceCount = await downloadResourcesAndSave(html, url, pageDir, htmlFilename, cookies);
+
+  return { success: true, resources: resourceCount };
+}
+
+/**
+ * Fetch subpages for a main page that has already been fetched.
+ * Reads the saved main page HTML to discover subpage links, then fetches each one.
+ */
+async function fetchSubpages(url, domain, dateCode, cookies) {
+  const domainDir = path.join(OUTPUT_DIR, domain);
+  const pageDir = path.join(domainDir, dateCode);
+
+  const mainHtmlFilename = path.basename(new URL(url).pathname) || 'index.html';
+  const mainHtmlPath = path.join(pageDir, mainHtmlFilename);
+
+  if (!(await fs.pathExists(mainHtmlPath))) {
+    console.log(`  Skipping subpages for ${url} (main page not found on disk)`);
+    return { subpagesFetched: 0, subpagesFailed: 0 };
+  }
+
+  const mainHtml = await fs.readFile(mainHtmlPath, 'utf-8');
+  const subpageLinks = extractSubpageLinks(mainHtml);
+
+  // Filter out the main page itself
+  const filteredLinks = subpageLinks.filter((link) => link !== mainHtmlFilename);
+
+  if (filteredLinks.length === 0) {
+    return { subpagesFetched: 0, subpagesFailed: 0 };
+  }
+
+  console.log(`  Found ${filteredLinks.length} subpages for ${dateCode}`);
+
+  const baseUrl = url.substring(0, url.lastIndexOf('/') + 1);
+  let subpagesFetched = 0;
+  let subpagesFailed = 0;
+
+  for (const subpageFile of filteredLinks) {
+    const subpageUrl = baseUrl + subpageFile;
+    const subpagePath = path.join(pageDir, subpageFile);
+
+    // Skip if subpage already exists
+    if (await fs.pathExists(subpagePath)) {
+      console.log(`    Already fetched: ${subpageFile}`);
+      subpagesFetched++;
+      continue;
+    }
+
+    try {
+      console.log(`    Fetching subpage: ${subpageFile}`);
+      const response = await fetchWithAuth(subpageUrl, cookies);
+      let html = await response.text();
+
+      await downloadResourcesAndSave(html, subpageUrl, pageDir, subpageFile, cookies);
+      subpagesFetched++;
+
+      // Small delay between subpage requests
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    } catch (err) {
+      console.log(`    ! Failed to fetch subpage ${subpageFile}: ${err.message}`);
+      subpagesFailed++;
+    }
+  }
+
+  return { subpagesFetched, subpagesFailed };
 }
 
 /**
  * Main function to fetch all statistics pages
  */
 async function main() {
+  const subpagesOnly = process.argv.includes('--subpages-only');
+
   console.log('Domeneshop Statistics Fetcher\n');
+  if (subpagesOnly) {
+    console.log('Mode: subpages only (main pages already fetched)\n');
+  }
 
   // Load cookies
   const cookies = await loadCookies();
@@ -267,16 +370,27 @@ async function main() {
   // Ensure output directory exists
   await fs.ensureDir(OUTPUT_DIR);
 
-  // Fetch all pages
   let processed = 0;
   let failed = 0;
+  let totalSubpagesFetched = 0;
+  let totalSubpagesFailed = 0;
 
   for (const [domain, entries] of Object.entries(domains)) {
     console.log(`\n[${domain}] (${entries.length} pages)`);
 
     for (const entry of entries) {
       try {
-        await fetchPage(entry.url, domain, entry.dateCode, cookies);
+        if (!subpagesOnly) {
+          await fetchPage(entry.url, domain, entry.dateCode, cookies);
+        }
+
+        // Fetch subpages
+        const { subpagesFetched, subpagesFailed } = await fetchSubpages(
+          entry.url, domain, entry.dateCode, cookies
+        );
+        totalSubpagesFetched += subpagesFetched;
+        totalSubpagesFailed += subpagesFailed;
+
         processed++;
       } catch (err) {
         console.error(`  ERROR: ${entry.url} - ${err.message}`);
@@ -288,7 +402,9 @@ async function main() {
     }
   }
 
-  console.log(`\n\nDone! Processed ${processed} pages, ${failed} failed.`);
+  console.log(`\n\nDone!`);
+  console.log(`Main pages: ${processed} processed, ${failed} failed.`);
+  console.log(`Subpages: ${totalSubpagesFetched} fetched, ${totalSubpagesFailed} failed.`);
   console.log(`Output saved to: ${OUTPUT_DIR}`);
 }
 

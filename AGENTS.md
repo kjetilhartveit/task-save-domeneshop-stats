@@ -21,6 +21,7 @@ What is essential though is that the pages might need authentication to be read/
   - [x] Run the program and make sure we fetch all we want and that everything is saved to disk. Make sure that we can view the pages in a browser and that they render succesfully and aren't missing information.
   - Note that we have already fetched the main pages and resources, so we don't need to fetch them again. We should continue with fetching the subpages and their resources.
   - Note: we do not want to fetch from http://www.awstats.org/ as it is not a part of the Domeneshop statistics.
+- [ ] Fetch the overview page at https://stat.domeneshop.no/ which contains all the domains and links to months. Save it to disk and make sure it is fully fetched and static. Make it available for viewing in a browser in the root of the output folder (index.html).
 
 ## Execution of plan
 
